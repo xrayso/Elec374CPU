@@ -1,0 +1,19 @@
+{
+ "version": "2.0.0",
+ "tasks": [
+ {
+ "label": "Run Verilog Simulation",
+ "type": "shell",
+ "command": "iverilog -o simulation_bin.out main_design.v helper_module.v
+design_tb.v && vvp simulation_bin.out && gtkwave waveforms.vcd view_settings.gtkw",
+ "options": {
+ "cwd": "${workspaceFolder}/Verilog_Project"
+ },
+ "group": {
+ "kind": "build",
+ "isDefault": true
+ },
+ "problemMatcher": []
+ }
+ ]
+}
