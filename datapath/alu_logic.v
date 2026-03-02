@@ -8,8 +8,7 @@ module alu_logic (
     output reg          overflow,
     output reg  [63:0]  C
     //Implemented - And(1), Or(2), Addition (CLA)(8), Multiplication(10), Shift Left(3)
-                      //Rotate Left(6), Rotate Right(7), Shift Right(4), Shift Right (Signed)(5)
-    //Not Implemented - Subtraction(9), Division(11), negate, not
+                      //Rotate Left(6), Rotate Right(7), Shift Right(4), Shift Right (Signed)(5), negate, not, Subtraction(9), Division(11), 
 );
 
     // Add/Sub wiring
@@ -19,6 +18,10 @@ module alu_logic (
     wire [31:0] add_sum;
     wire        add_cout;
     wire [63:0] md_sum;
+
+    // Division wiring
+    wire [31:0] div_q;
+    wire [31:0] div_r;
     
     wire [4:0] sh = B[4:0]; //For Rotating
 
@@ -26,7 +29,7 @@ module alu_logic (
 
     cla32 inst_cla32 (
                 .a  (A),
-                .b  (B),
+                .b  (B_eff),
                 .cin    (cin_eff),
                 .sum    (add_sum),
                 .cout   (add_cout)
@@ -37,6 +40,15 @@ module alu_logic (
                 .Q(B),
                 .P(md_sum)
             );
+
+
+    nonrestoring_div32 u_div (
+        .numerator   (A),
+        .denominator (B),
+        .remainder   (div_r),
+        .quotient    (div_q)
+    );
+
 
     always @(*) begin
         C = 64'b0;
@@ -49,7 +61,7 @@ module alu_logic (
             `ORop:   C = {32'b0, (A | B)};
             `SHLop:  C = {32'b0, A << B}; //32-bit return
             `SHRop:  C = {32'b0, A >> B}; //32-bit return
-            `SHRAop: C = (A[31] == 1) ? {32'b0, A >>> B} : {32'b0, A >>> B}; //32-bit return
+            `SHRAop: C = {32'b0, $signed(A) >>> sh};
             `ROLop:  C = {32'b0, (sh == 0) ? A : ((A << sh) | (A >> (5'd32 - sh)))};
             `RORop:  C = {32'b0, (sh == 0) ? A : ((A >> sh) | (A << (5'd32 - sh)))};
             `ADDop:  C = {32'b0, add_sum};
@@ -57,10 +69,9 @@ module alu_logic (
             `NEGop:  C = {32'b0, ~B+1'b1};
             `NOTop:  C = {32'b0, ~B};
             `SUBop:  C = {32'b0, add_sum};
+            `DIVop: C = {div_r, div_q};
 
         endcase
-
-
 
     end
 endmodule
