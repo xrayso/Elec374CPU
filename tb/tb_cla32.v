@@ -16,7 +16,8 @@ module tb_cla32;
 
   integer i;
   integer tests;
-  integer startTime, currentTime, goalTime, minutes;
+  time startTime, currentTime, goalTime;
+  integer minutes;
 
   task check;
     begin
@@ -32,7 +33,7 @@ module tb_cla32;
 
   initial begin
     tests = -7; //Start at -7 to offset corner cases
-    goalTime = 300 * 1_000_000_000_000; // 300s = 3e14 ps
+    goalTime = 64'd300000000000000; // 300s = 3e14 ps
     $display("Starting 32 bit cla test...");
 
     //Can no longer check every combination as it would take far too long ~ 1100 years

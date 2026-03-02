@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 `include "defines.vh"
 
-module datapath_add_tb;
+module tb_sub;
   reg clk = 1'b0;
   always #5 clk = ~clk;
 
@@ -86,7 +86,6 @@ module datapath_add_tb;
   task fetch_instr;
     input [31:0] opcode;
     begin
-      // T0: PCout, MARin, IncPC, Zin
       clear_ctrl();
       bus_sel = SEL_PC;
       MARin = 1'b1;
@@ -94,7 +93,6 @@ module datapath_add_tb;
       Zin = 1'b1;
       tick;
 
-      // T1: Zlowout, PCin, Read, Mdatain, MDRin
       clear_ctrl();
       bus_sel = SEL_ZLOW;
       PCin = 1'b1;
@@ -103,22 +101,16 @@ module datapath_add_tb;
       Mdatain = opcode;
       tick;
 
-      // T2: MDRout, IRin
       clear_ctrl();
       bus_sel = SEL_MDR;
       IRin = 1'b1;
       tick;
-
-      if (IR_q_dbg !== opcode) begin
-        $display("FAIL ADD FETCH: IR=%h expected=%h", IR_q_dbg, opcode);
-        $fatal;
-      end
     end
   endtask
 
   initial begin
-    $dumpfile("add.vcd");
-    $dumpvars(0, datapath_add_tb);
+    $dumpfile("sub.vcd");
+    $dumpvars(0, tb_sub);
 
     PC = 32'd0;
     IR = 32'd0;
@@ -132,10 +124,14 @@ module datapath_add_tb;
     tick;
     reset = 1'b0;
 
-    load_reg(5, 32'd7);
-    load_reg(6, 32'd11);
+    load_reg(5, 32'h0000_0034);
+    load_reg(6, 32'h0000_0045);
 
-    fetch_instr(32'h012B0000); // add R2, R5, R6
+    fetch_instr(32'h092B0000); // sub R2, R5, R6
+    if (IR_q_dbg !== 32'h092B0000) begin
+      $display("FAIL SUB FETCH: IR=%h expected=%h", IR_q_dbg, 32'h092B0000);
+      $fatal;
+    end
 
     // T3: R5out, Yin
     clear_ctrl();
@@ -143,10 +139,10 @@ module datapath_add_tb;
     Yin = 1'b1;
     tick;
 
-    // T4: R6out, ADD, Zin
+    // T4: R6out, SUB, Zin
     clear_ctrl();
     bus_sel = SEL_R6;
-    op = `ADDop;
+    op = `SUBop;
     Zin = 1'b1;
     tick;
 
@@ -156,17 +152,12 @@ module datapath_add_tb;
     Rin[2] = 1'b1;
     tick;
 
-    if (R2_q !== 32'd18) begin
-      $display("FAIL ADD: R2=%0d expected=18", R2_q);
+    if (R2_q !== (32'h0000_0034 - 32'h0000_0045)) begin
+      $display("FAIL SUB: R2=%h expected=%h", R2_q, (32'h0000_0034 - 32'h0000_0045));
       $fatal;
     end
 
-    if (PC_q_dbg !== 32'h0000_0001) begin
-      $display("FAIL ADD: PC=%h expected=%h", PC_q_dbg, 32'h0000_0001);
-      $fatal;
-    end
-
-    $display("PASS ADD: R2=%0d PC=%h IR=%h", R2_q, PC_q_dbg, IR_q_dbg);
+    $display("PASS SUB: R2=%h", R2_q);
     $finish;
   end
 

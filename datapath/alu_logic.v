@@ -1,4 +1,4 @@
-`include "/Users/josh/Desktop/374/datapath/defines.vh"
+`include "defines.vh"
 
 module alu_logic (
     input   wire [31:0]     A,
@@ -12,8 +12,8 @@ module alu_logic (
 );
 
     // Add/Sub wiring
-    wire [31:0] B_eff   = (op == `SUBop) ? ~B : B; //Invert B if subtracting
-    wire        cin_eff = (op == `SUBop) ? 1'b1 : 1'b0; //Add a carry in that will finish the 2's compliment
+    wire [31:0] B_eff   = (op == `SUBop) ? ~B : B;
+    wire        cin_eff = (op == `SUBop) ? 1'b1 : 1'b0;
 
     wire [31:0] add_sum;
     wire        add_cout;
@@ -23,7 +23,9 @@ module alu_logic (
     wire [31:0] div_q;
     wire [31:0] div_r;
     
-    wire [4:0] sh = B[4:0]; //For Rotating
+    wire [4:0] sh = B[4:0];
+    wire       add_overflow = (~(A[31] ^ B[31])) & (add_sum[31] ^ A[31]);
+    wire       sub_overflow = (A[31] ^ B[31]) & (add_sum[31] ^ A[31]);
 
 
 
@@ -52,24 +54,33 @@ module alu_logic (
 
     always @(*) begin
         C = 64'b0;
-
-
+        overflow = 1'b0;
 
         case (op)
 
             `ANDop:  C = {32'b0, (A & B)};
             `ORop:   C = {32'b0, (A | B)};
-            `SHLop:  C = {32'b0, A << B}; //32-bit return
-            `SHRop:  C = {32'b0, A >> B}; //32-bit return
+            `SHLop:  C = {32'b0, A << sh};
+            `SHRop:  C = {32'b0, A >> sh};
             `SHRAop: C = {32'b0, $signed(A) >>> sh};
-            `ROLop:  C = {32'b0, (sh == 0) ? A : ((A << sh) | (A >> (5'd32 - sh)))};
-            `RORop:  C = {32'b0, (sh == 0) ? A : ((A >> sh) | (A << (5'd32 - sh)))};
-            `ADDop:  C = {32'b0, add_sum};
+            `ROLop:  C = {32'b0, (sh == 0) ? A : ((A << sh) | (A >> (6'd32 - sh)))};
+            `RORop:  C = {32'b0, (sh == 0) ? A : ((A >> sh) | (A << (6'd32 - sh)))};
+            `ADDop: begin
+                C = {32'b0, add_sum};
+                overflow = add_overflow;
+            end
             `MULop:  C = {md_sum};
             `NEGop:  C = {32'b0, ~B+1'b1};
             `NOTop:  C = {32'b0, ~B};
-            `SUBop:  C = {32'b0, add_sum};
+            `SUBop: begin
+                C = {32'b0, add_sum};
+                overflow = sub_overflow;
+            end
             `DIVop: C = {div_r, div_q};
+            default: begin
+                C = 64'b0;
+                overflow = 1'b0;
+            end
 
         endcase
 

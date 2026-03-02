@@ -1,51 +1,70 @@
 `timescale 1ns/1ps
-`include "/Users/josh/Desktop/374/datapath/defines.vh"
-
+`include "defines.vh"
 
 module tb_logic;
-
-  reg clk = 0;
+  reg clk = 1'b0;
   always #5 clk = ~clk;
-  //5ns clock
 
-  reg reset;
-    //Descriptions can be found in the datapath
-  reg [4:0]  bus_sel;
-  reg [15:0] Rin;
-  reg Yin, Zin; 
-  reg [3:0] op;
-  reg [31:0] InPort_data;
+  reg         reset;
+  reg  [4:0]  bus_sel;
+  reg  [15:0] Rin;
+  reg         Yin, Zin;
+  reg         PCin, IRin, MARin, MDRin, HIin, LOin, IncPC, Read;
+  reg  [3:0]  op;
+  reg  [31:0] Mdatain;
+  reg  [31:0] PC, IR, HI, LO, MAR, MDR;
 
-  wire [31:0] BUS, R5_q, R6_q, R3_q, R2_q, Y_q;
+  wire [31:0] BUS;
+  wire [31:0] R5_q, R6_q, R3_q, R2_q, R0_q, R1_q, R4_q, R7_q;
+  wire [31:0] HI_q_dbg, LO_q_dbg, IR_q_dbg, PC_q_dbg, Y_q;
   wire [63:0] Z_q;
+
+  localparam [4:0] SEL_R0   = 5'd0;
+  localparam [4:0] SEL_R4   = 5'd4;
+  localparam [4:0] SEL_R5   = 5'd5;
+  localparam [4:0] SEL_R6   = 5'd6;
+  localparam [4:0] SEL_R7   = 5'd7;
+  localparam [4:0] SEL_PC   = 5'd16;
+  localparam [4:0] SEL_MDR  = 5'd20;
+  localparam [4:0] SEL_ZLOW = 5'd23;
+
+  localparam [31:0] A_VAL = 32'hF0F0_0F0F;
+  localparam [31:0] B_VAL = 32'hAAAA_5555;
+  localparam [4:0]  SHAMT = 5'd7;
 
   datapath_logic dut (
     .clk(clk), .reset(reset),
-    .bus_sel(bus_sel),
-    .Rin(Rin),
-    .Yin(Yin),
-    .Zin(Zin),
+    .bus_sel(bus_sel), .Rin(Rin), .Yin(Yin), .Zin(Zin),
+    .PCin(PCin), .IRin(IRin), .MARin(MARin), .MDRin(MDRin),
+    .HIin(HIin), .LOin(LOin), .IncPC(IncPC), .Read(Read), .Mdatain(Mdatain),
+    .PC(PC), .IR(IR), .HI(HI), .LO(LO), .MAR(MAR), .MDR(MDR),
     .op(op),
-    .InPort_data(InPort_data),
     .BUS(BUS),
-    .R5_q(R5_q),
-    .R6_q(R6_q),
-    .R3_q(R3_q),
-    .R2_q(R2_q),
-    .Y_q(Y_q),
-    .Z_q(Z_q)
+    .R5_q(R5_q), .R6_q(R6_q), .R3_q(R3_q), .R2_q(R2_q),
+    .R0_q(R0_q), .R1_q(R1_q), .R4_q(R4_q), .R7_q(R7_q),
+    .HI_q_dbg(HI_q_dbg), .LO_q_dbg(LO_q_dbg), .IR_q_dbg(IR_q_dbg), .PC_q_dbg(PC_q_dbg),
+    .Y_q(Y_q), .Z_q(Z_q)
   );
-    //Clears control signals between ticks
+
   task clear_ctrl;
     begin
-      bus_sel = 0;
-      Rin     = 0;
-      Yin     = 0;
-      Zin     = 0;
-      op   = 0;
+      bus_sel  = 5'd0;
+      Rin      = 16'b0;
+      Yin      = 1'b0;
+      Zin      = 1'b0;
+      PCin     = 1'b0;
+      IRin     = 1'b0;
+      MARin    = 1'b0;
+      MDRin    = 1'b0;
+      HIin     = 1'b0;
+      LOin     = 1'b0;
+      IncPC    = 1'b0;
+      Read     = 1'b0;
+      op       = 4'd0;
+      Mdatain  = 32'd0;
     end
   endtask
-    //Ticks the clock forward and waits a nanosecond
+
   task tick;
     begin
       @(negedge clk);
@@ -54,303 +73,164 @@ module tb_logic;
     end
   endtask
 
-    //Local vars 
-    localparam SEL_R5   = 5'd5;
-    localparam SEL_R6   = 5'd6;
-    localparam SEL_ZLOW = 5'd23;
-    localparam SEL_ZHI  = 5'd24;
-    localparam SEL_IN   = 5'd20; //Use 20 for select (MDR)
+  task load_reg;
+    input integer dst;
+    input [31:0] value;
+    begin
+      clear_ctrl();
+      Mdatain = value;
+      Read = 1'b1;
+      MDRin = 1'b1;
+      tick;
 
-    localparam a        = 32'hF0F0_0F0F;
-    localparam b        = 32'h0000_0007;
+      clear_ctrl();
+      bus_sel = SEL_MDR;
+      Rin[dst] = 1'b1;
+      tick;
+    end
+  endtask
+
+  task fetch_instr;
+    input [31:0] opcode;
+    begin
+      // T0: PCout, MARin, IncPC, Zin
+      clear_ctrl();
+      bus_sel = SEL_PC;
+      MARin = 1'b1;
+      IncPC = 1'b1;
+      Zin = 1'b1;
+      tick;
+
+      // T1: Zlowout, PCin, Read, Mdatain, MDRin
+      clear_ctrl();
+      bus_sel = SEL_ZLOW;
+      PCin = 1'b1;
+      Read = 1'b1;
+      MDRin = 1'b1;
+      Mdatain = opcode;
+      tick;
+
+      // T2: MDRout, IRin
+      clear_ctrl();
+      bus_sel = SEL_MDR;
+      IRin = 1'b1;
+      tick;
+
+      if (IR_q_dbg !== opcode) begin
+        $display("FAIL FETCH: IR=%h expected=%h", IR_q_dbg, opcode);
+        $fatal;
+      end
+    end
+  endtask
+
+  task exec_bin_to_reg;
+    input [4:0] src_a_sel;
+    input [4:0] src_b_sel;
+    input [3:0] alu_op;
+    input integer dst;
+    begin
+      // T3: src_a -> Y
+      clear_ctrl();
+      bus_sel = src_a_sel;
+      Yin = 1'b1;
+      tick;
+
+      // T4: src_b + ALU op -> Z
+      clear_ctrl();
+      bus_sel = src_b_sel;
+      op = alu_op;
+      Zin = 1'b1;
+      tick;
+
+      // T5: Zlow -> dst
+      clear_ctrl();
+      bus_sel = SEL_ZLOW;
+      Rin[dst] = 1'b1;
+      tick;
+    end
+  endtask
 
   initial begin
     $dumpfile("logic.vcd");
     $dumpvars(0, tb_logic);
 
-    // reset
+    PC = 32'd0;
+    IR = 32'd0;
+    HI = 32'd0;
+    LO = 32'd0;
+    MAR = 32'd0;
+    MDR = 32'd0;
+
     clear_ctrl();
-    reset = 1;
-    InPort_data = 0;
+    reset = 1'b1;
     tick;
-    reset = 0;
+    reset = 1'b0;
 
-    // Load R5 = 0xF0F00F0F
-    clear_ctrl();
-    InPort_data = a;
-    bus_sel = SEL_IN;
-    Rin[5] = 1;
-    tick;
+    load_reg(5, A_VAL);         // R5
+    load_reg(6, B_VAL);         // R6
+    load_reg(0, A_VAL);         // R0
+    load_reg(4, {27'd0, SHAMT}); // R4
 
-    // Load R6 = 0xAAAA5555
-    clear_ctrl();
-    InPort_data = b;
-    bus_sel = SEL_IN;
-    Rin[6] = 1;
-    tick;
-
-    // -------- AND: R2 = R5 & R6 --------
-    // T1: R5 -> Y
-    clear_ctrl();
-    bus_sel = SEL_R5;
-    Yin = 1;
-    tick;
-
-    // T2: R6 + AND -> Z
-    clear_ctrl();
-    bus_sel = SEL_R6;
-    op = `ANDop;
-    Zin = 1;
-    tick;
-
-    // T3: Zlow -> R2
-    clear_ctrl();
-    bus_sel = SEL_ZLOW;
-    Rin[2] = 1;
-    tick;
-
-    if (R2_q !== (a & b)) begin
-      $display("FAIL AND: R2=%h expected=%h", R2_q, (32'hF0F0_0F0F & 32'hAAAA_5555));
-      $fatal;
-    end
-    $display("PASS AND: R2=%h", R2_q);
-
-    // -------- OR: R2 = R5 | R6 --------
-    // reuse same destination register
-    // T1: R5 -> Y
-    clear_ctrl();
-    bus_sel = SEL_R5;
-    Yin = 1;
-    tick;
-
-    // T2: R6 + OR -> Z
-    clear_ctrl();
-    bus_sel = SEL_R6;
-    op = `ORop;
-    Zin = 1;
-    tick;
-
-    // T3: Zlow -> R2
-    clear_ctrl();
-    bus_sel = SEL_ZLOW;
-    Rin[2] = 1;
-    tick;
-
-    if (R2_q !== (a | b)) begin
-      $display("FAIL OR: R2=%h expected=%h", R2_q, (32'hF0F0_0F0F | 32'hAAAA_5555));
+    // OR R2, R5, R6
+    fetch_instr(32'h192B0000);
+    exec_bin_to_reg(SEL_R5, SEL_R6, `ORop, 2);
+    if (R2_q !== (A_VAL | B_VAL)) begin
+      $display("FAIL OR: R2=%h expected=%h", R2_q, (A_VAL | B_VAL));
       $fatal;
     end
     $display("PASS OR: R2=%h", R2_q);
 
-    // -------- SHL: R2 = R5 << (R6[4:0]) --------
-    // T1: R5 -> Y
-    clear_ctrl();
-    bus_sel = SEL_R5;
-    Yin = 1;
-    tick;
-
-    // T2: SHL using BUS=R6 as shift amount -> Z
-    clear_ctrl();
-    bus_sel = SEL_R6;
-    op = `SHLop;
-    Zin = 1;
-    tick;
-
-    // T3: Zlow -> R2
-    clear_ctrl();
-    bus_sel = SEL_ZLOW;
-    Rin[2] = 1;
-    tick;
-
-    if (R2_q !== (a << b)) begin
-      $display("FAIL SHL: R2=%h expected=%h", R2_q, (a << b));
+    // SHR R7, R0, R4
+    fetch_instr(32'h23820000);
+    exec_bin_to_reg(SEL_R0, SEL_R4, `SHRop, 7);
+    if (R7_q !== (A_VAL >> SHAMT)) begin
+      $display("FAIL SHR: R7=%h expected=%h", R7_q, (A_VAL >> SHAMT));
       $fatal;
     end
-    $display("PASS SHL: R2=%h", R2_q);
+    $display("PASS SHR: R7=%h", R7_q);
 
-    // -------- SHR: R2 = R5 >> (R6[4:0]) --------
-    // T1: R5 -> Y
-    clear_ctrl();
-    bus_sel = SEL_R5;
-    Yin = 1;
-    tick;
-
-    // T2: SHR using BUS=R6 as shift amount -> Z
-    clear_ctrl();
-    bus_sel = SEL_R6;
-    op = `SHRop;
-    Zin = 1;
-    tick;
-
-    // T3: Zlow -> R2
-    clear_ctrl();
-    bus_sel = SEL_ZLOW;
-    Rin[2] = 1;
-    tick;
-
-    if (R2_q !== (a >> b)) begin
-      $display("FAIL SHR: R2=%h expected=%h", R2_q, (a >> b));
+    // SHRA R7, R0, R4
+    fetch_instr(32'h2B820000);
+    exec_bin_to_reg(SEL_R0, SEL_R4, `SHRAop, 7);
+    if (R7_q !== 32'hFFE1_E01E) begin
+      $display("FAIL SHRA: R7=%h expected=%h", R7_q, 32'hFFE1_E01E);
       $fatal;
     end
-    $display("PASS SHR: R2=%h", R2_q);
+    $display("PASS SHRA: R7=%h", R7_q);
 
-    // -------- SHRA: R2 = $signed(R5) >>> (R6[4:0]) --------
-    // T1: R5 -> Y
-    clear_ctrl();
-    bus_sel = SEL_R5;
-    Yin = 1;
-    tick;
-
-    // T2: SHRA using BUS=R6 as shift amount -> Z
-    clear_ctrl();
-    bus_sel = SEL_R6;
-    op = `SHRAop;
-    Zin = 1;
-    tick;
-
-    // T3: Zlow -> R2
-    clear_ctrl();
-    bus_sel = SEL_ZLOW;
-    Rin[2] = 1;
-    tick;
-
-    if (R2_q !== ($signed(a) >>> b)) begin
-      $display("FAIL SHRA: R2=%h expected=%h", R2_q, ($signed(a) >>> b));
+    // SHL R7, R0, R4
+    fetch_instr(32'h33820000);
+    exec_bin_to_reg(SEL_R0, SEL_R4, `SHLop, 7);
+    if (R7_q !== (A_VAL << SHAMT)) begin
+      $display("FAIL SHL: R7=%h expected=%h", R7_q, (A_VAL << SHAMT));
       $fatal;
     end
-    $display("PASS SHRA: R2=%h", R2_q);
+    $display("PASS SHL: R7=%h", R7_q);
 
-    // -------- ROL: R2 = ROL(R5, R6[4:0]) --------
-    // T1: R5 -> Y
-    clear_ctrl();
-    bus_sel = SEL_R5;
-    Yin = 1;
-    tick;
-
-    // T2: ROL using BUS=R6 as rotate amount -> Z
-    clear_ctrl();
-    bus_sel = SEL_R6;
-    op = `ROLop;
-    Zin = 1;
-    tick;
-
-    // T3: Zlow -> R2
-    clear_ctrl();
-    bus_sel = SEL_ZLOW;
-    Rin[2] = 1;
-    tick;
-
-    if (R2_q !== ((a << b[4:0]) | (a >> (5'd32 - b[4:0])))) begin
-      $display("FAIL ROL: R2=%h expected=%h", R2_q,
-              ((a << b[4:0]) | (a >> (5'd32 - b[4:0]))));
+    // ROR R7, R0, R4
+    fetch_instr(32'h3B820000);
+    exec_bin_to_reg(SEL_R0, SEL_R4, `RORop, 7);
+    if (R7_q !== ((A_VAL >> SHAMT) | (A_VAL << (6'd32 - SHAMT)))) begin
+      $display("FAIL ROR: R7=%h expected=%h", R7_q, ((A_VAL >> SHAMT) | (A_VAL << (6'd32 - SHAMT))));
       $fatal;
     end
-    $display("PASS ROL: R2=%h", R2_q);
+    $display("PASS ROR: R7=%h", R7_q);
 
-    // -------- ROR: R2 = ROR(R5, R6[4:0]) --------
-    // T1: R5 -> Y
-    clear_ctrl();
-    bus_sel = SEL_R5;
-    Yin = 1;
-    tick;
-
-    // T2: ROR using BUS=R6 as rotate amount -> Z
-    clear_ctrl();
-    bus_sel = SEL_R6;
-    op = `RORop;
-    Zin = 1;
-    tick;
-
-    // T3: Zlow -> R2
-    clear_ctrl();
-    bus_sel = SEL_ZLOW;
-    Rin[2] = 1;
-    tick;
-
-    if (R2_q !== ((a >> b[4:0]) | (a << (5'd32 - b[4:0])))) begin
-      $display("FAIL ROR: R2=%h expected=%h", R2_q,
-              ((a >> b[4:0]) | (a << (5'd32 - b[4:0]))));
+    // ROL R7, R0, R4
+    fetch_instr(32'h43820000);
+    exec_bin_to_reg(SEL_R0, SEL_R4, `ROLop, 7);
+    if (R7_q !== ((A_VAL << SHAMT) | (A_VAL >> (6'd32 - SHAMT)))) begin
+      $display("FAIL ROL: R7=%h expected=%h", R7_q, ((A_VAL << SHAMT) | (A_VAL >> (6'd32 - SHAMT))));
       $fatal;
     end
-    $display("PASS ROR: R2=%h", R2_q);
+    $display("PASS ROL: R7=%h", R7_q);
 
-
-
-
-    // Load R5 = 0xF0F00F0F
-    clear_ctrl();
-    InPort_data = 32'h0001_0000;
-    bus_sel = SEL_IN;
-    Rin[5] = 1;
-    tick;
-
-    // Load R6 = 0xAAAA5555
-    clear_ctrl();
-    InPort_data = 32'h0001_0000;
-    bus_sel = SEL_IN;
-    Rin[6] = 1;
-    tick;
-
-    // -------- ADD: R2 = R5 + R6 --------
-    // reuse same destination register
-    // T1: R5 -> Y
-    clear_ctrl();
-    bus_sel = SEL_R5;
-    Yin = 1;
-    tick;
-
-    // T2: R6 + R5 -> Z
-    clear_ctrl();
-    bus_sel = SEL_R6;
-    op = `ADDop;
-    Zin = 1;
-    tick;
-
-    // T3: Zlow -> R2
-    clear_ctrl();
-    bus_sel = SEL_ZLOW;
-    Rin[2] = 1;
-    tick;
-
-    if (R2_q !== (32'h0001_0000 + 32'h0001_0000)) begin
-      $display("FAIL OR: R2=%h expected=%h", R2_q, (32'h0001_0000 + 32'h0001_0000));
+    if (PC_q_dbg !== 32'd6) begin
+      $display("FAIL LOGIC: PC=%h expected=%h", PC_q_dbg, 32'd6);
       $fatal;
     end
-    $display("PASS ADD: R2=%h", R2_q);
 
-    // -------- MUL: R2 = R5 + R6 --------
-    // reuse same destination register
-    // T1: R5 -> Y
-    clear_ctrl();
-    bus_sel = SEL_R5;
-    Yin = 1;
-    tick;
-
-    // T2: R6 + R5 -> Z
-    clear_ctrl();
-    bus_sel = SEL_R6;
-    op = `MULop;
-    Zin = 1;
-    tick;
-
-    // T3: Zlow -> R2
-    clear_ctrl();
-    bus_sel = SEL_ZLOW;
-    Rin[2] = 1;
-    tick;
-
-    // T3: Zlow -> R3
-    clear_ctrl();
-    bus_sel = SEL_ZHI;
-    Rin[3] = 1;
-    tick;
-
-    if ({R3_q, R2_q} !== (64'h0001_0000 * 64'h0001_0000)) begin
-      $display("FAIL MUL: R2=%h expected=%h", {R3_q, R2_q}, (64'h0001_0000 * 64'h0001_0000));
-      $fatal;
-    end
-    $display("PASS MUL: R2R3=%h", {R3_q, R2_q});
-
+    $display("PASS LOGIC SUITE: PC=%h", PC_q_dbg);
     $finish;
   end
 

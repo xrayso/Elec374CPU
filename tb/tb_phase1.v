@@ -1,58 +1,63 @@
 `timescale 1ns/1ps
-`include "/Users/josh/Desktop/374/datapath/defines.vh"
-
-
+`include "defines.vh"
 
 module tb_phase1;
-
-
-reg clk = 0;
+  reg clk = 1'b0;
   always #5 clk = ~clk;
-  //5ns clock
 
-  reg reset;
-    //Descriptions can be found in the datapath
-  reg [4:0]  bus_sel;
-  reg [15:0] Rin;
-  reg Yin, Zin; 
-  reg [3:0] op;
-  reg [31:0] MDR;
-  reg [31:0] MAR;
+  reg         reset;
+  reg  [4:0]  bus_sel;
+  reg  [15:0] Rin;
+  reg         Yin, Zin;
+  reg         PCin, IRin, MARin, MDRin, HIin, LOin, IncPC, Read;
+  reg  [3:0]  op;
+  reg  [31:0] Mdatain;
+  reg  [31:0] PC, IR, HI, LO, MAR, MDR;
 
-  wire [31:0] BUS, R5_q, R6_q, R3_q, R2_q, Y_q;
+  wire [31:0] BUS;
+  wire [31:0] R5_q, R6_q, R3_q, R2_q, R0_q, R1_q, R4_q, R7_q;
+  wire [31:0] HI_q_dbg, LO_q_dbg, IR_q_dbg, PC_q_dbg, Y_q;
   wire [63:0] Z_q;
 
-    
+  localparam [4:0] SEL_R5   = 5'd5;
+  localparam [4:0] SEL_R6   = 5'd6;
+  localparam [4:0] SEL_PC   = 5'd16;
+  localparam [4:0] SEL_MDR  = 5'd20;
+  localparam [4:0] SEL_ZLOW = 5'd23;
 
-    datapath_logic dut (
+  datapath_logic dut (
     .clk(clk), .reset(reset),
-    .bus_sel(bus_sel),
-    .Rin(Rin),
-    .Yin(Yin),
-    .Zin(Zin),
+    .bus_sel(bus_sel), .Rin(Rin), .Yin(Yin), .Zin(Zin),
+    .PCin(PCin), .IRin(IRin), .MARin(MARin), .MDRin(MDRin),
+    .HIin(HIin), .LOin(LOin), .IncPC(IncPC), .Read(Read), .Mdatain(Mdatain),
+    .PC(PC), .IR(IR), .HI(HI), .LO(LO), .MAR(MAR), .MDR(MDR),
     .op(op),
-    .MDR(MDR),
-    .MAR(MAR)
     .BUS(BUS),
-    .R5_q(R5_q),
-    .R6_q(R6_q),
-    .R3_q(R3_q),
-    .R2_q(R2_q),
-    .Y_q(Y_q),
-    .Z_q(Z_q)
+    .R5_q(R5_q), .R6_q(R6_q), .R3_q(R3_q), .R2_q(R2_q),
+    .R0_q(R0_q), .R1_q(R1_q), .R4_q(R4_q), .R7_q(R7_q),
+    .HI_q_dbg(HI_q_dbg), .LO_q_dbg(LO_q_dbg), .IR_q_dbg(IR_q_dbg), .PC_q_dbg(PC_q_dbg),
+    .Y_q(Y_q), .Z_q(Z_q)
   );
-
 
   task clear_ctrl;
     begin
-      bus_sel = 0;
-      Rin     = 0;
-      Yin     = 0;
-      Zin     = 0;
-      op   = 0;
+      bus_sel  = 5'd0;
+      Rin      = 16'b0;
+      Yin      = 1'b0;
+      Zin      = 1'b0;
+      PCin     = 1'b0;
+      IRin     = 1'b0;
+      MARin    = 1'b0;
+      MDRin    = 1'b0;
+      HIin     = 1'b0;
+      LOin     = 1'b0;
+      IncPC    = 1'b0;
+      Read     = 1'b0;
+      op       = 4'd0;
+      Mdatain  = 32'd0;
     end
   endtask
-    //Ticks the clock forward and waits a nanosecond
+
   task tick;
     begin
       @(negedge clk);
@@ -61,97 +66,110 @@ reg clk = 0;
     end
   endtask
 
+  task load_reg;
+    input integer dst;
+    input [31:0] value;
+    begin
+      clear_ctrl();
+      Mdatain = value;
+      Read = 1'b1;
+      MDRin = 1'b1;
+      tick;
 
-    parameter Default = 4'b0000, Reg_load1a = 4'b0001, Reg_load1b = 4'b0010, Reg_load2a = 4'b0011,
-    Reg_load2b = 4'b0100, Reg_load3a = 4'b0101, Reg_load3b = 4'b0110, T0 = 4'b0111,
-    T1 = 4'b1000, T2 = 4'b1001, T3 = 4'b1010, T4 = 4'b1011, T5 = 4'b1100;
-    reg [3:0] Present_state = Default
+      clear_ctrl();
+      bus_sel = SEL_MDR;
+      Rin[dst] = 1'b1;
+      tick;
+    end
+  endtask
 
+  task fetch_instr;
+    input [31:0] opcode;
+    begin
+      // T0: PCout, MARin, IncPC, Zin
+      clear_ctrl();
+      bus_sel = SEL_PC;
+      MARin = 1'b1;
+      IncPC = 1'b1;
+      Zin = 1'b1;
+      tick;
+
+      // T1: Zlowout, PCin, Read, Mdatain, MDRin
+      clear_ctrl();
+      bus_sel = SEL_ZLOW;
+      PCin = 1'b1;
+      Read = 1'b1;
+      MDRin = 1'b1;
+      Mdatain = opcode;
+      tick;
+
+      // T2: MDRout, IRin
+      clear_ctrl();
+      bus_sel = SEL_MDR;
+      IRin = 1'b1;
+      tick;
+
+      if (IR_q_dbg !== opcode) begin
+        $display("FAIL PHASE1 AND FETCH: IR=%h expected=%h", IR_q_dbg, opcode);
+        $fatal;
+      end
+    end
+  endtask
 
   initial begin
-    $dumpfile("logic.vcd");
+    $dumpfile("phase1.vcd");
     $dumpvars(0, tb_phase1);
 
+    PC = 32'd0;
+    IR = 32'd0;
+    HI = 32'd0;
+    LO = 32'd0;
+    MAR = 32'd0;
+    MDR = 32'd0;
 
-  end
+    clear_ctrl();
+    reset = 1'b1;
+    tick;
+    reset = 1'b0;
 
-  always @(posedge clk) // finite state machine; if clock rising-edge
-    begin
-        case (Present_state)
-            Default : Present_state = Reg_load1a;
-            Reg_load1a : Present_state = Reg_load1b;
-            Reg_load1b : Present_state = Reg_load2a;
-            Reg_load2a : Present_state = Reg_load2b;
-            Reg_load2b : Present_state = Reg_load3a;
-            Reg_load3a : Present_state = Reg_load3b;
-            Reg_load3b : Present_state = T0;
-            T0 : Present_state = T1;
-            T1 : Present_state = T2;
-            T2 : Present_state = T3;
-            T3 : Present_state = T4;
-            T4 : Present_state = T5;
-        endcase
+    // Setup values used in the AND sequence.
+    load_reg(5, 32'h0000_0034);
+    load_reg(6, 32'h0000_0045);
+    load_reg(2, 32'h0000_0067);
+
+    fetch_instr(32'h112B0000); // and R2, R5, R6
+
+    // T3: R5out, Yin
+    clear_ctrl();
+    bus_sel = SEL_R5;
+    Yin = 1'b1;
+    tick;
+
+    // T4: R6out, AND, Zin
+    clear_ctrl();
+    bus_sel = SEL_R6;
+    op = `ANDop;
+    Zin = 1'b1;
+    tick;
+
+    // T5: Zlowout, R2in
+    clear_ctrl();
+    bus_sel = SEL_ZLOW;
+    Rin[2] = 1'b1;
+    tick;
+
+    if (R2_q !== 32'h0000_0004) begin
+      $display("FAIL PHASE1 AND: R2=%h expected=%h", R2_q, 32'h0000_0004);
+      $fatal;
     end
 
+    if (PC_q_dbg !== 32'h0000_0001) begin
+      $display("FAIL PHASE1 AND: PC=%h expected=%h", PC_q_dbg, 32'h0000_0001);
+      $fatal;
+    end
 
-always @(Present_state) // do the required job in each state
- begin
-    case (Present_state) // assert the required signals in each clock cycle
-        Default: begin
-            PCout <= 0; Zlowout <= 0; MDRout <= 0; // initialize the signals
-            R3out <= 0; R7out <= 0; MARin <= 0; Zin <= 0;
-            PCin <=0; MDRin <= 0; IRin <= 0; Yin <= 0;
-            IncPC <= 0; Read <= 0; AND <= 0;
-            R2in <= 0; R5in <= 0; R6in <= 0; Mdatain <= 32'h00000000;
-        end
-        Reg_load1a: begin
-            Mdatain <= 32'h00000034;
-            Read = 0; MDRin = 0; // the first zero is there for completeness
-            Read <= 1; MDRin <= 1; // Took out #15 for '1', as it may not be needed
-            #15 Read <= 0; MDRin <= 0; // for your current implementation
-        end
-            Reg_load1b: begin
-            MDRout <= 1; R5in <= 1;
-            #15 MDRout <= 0; R5in <= 0; // initialize R5 with the value 0x34
-        end
-        Reg_load2a: begin
-            Mdatain <= 32’h00000045;
-            Read <= 1; MDRin <= 1;
-            #15 Read <= 0; MDRin <= 0;
-        end
-        Reg_load2b: begin
-            MDRout <= 1; R6in <= 1;
-            #15 MDRout <= 0; R6in <= 0; // initialize R6 with the value 0x45
-        end
-        Reg_load3a: begin
-            Mdatain <= 32'h00000067;
-            Read <= 1; MDRin <= 1;
-            #15 Read <= 0; MDRin <= 0;
-        end
-        Reg_load3b: begin
-            MDRout <= 1; R2in <= 1;
-            #15 MDRout <= 0; R2in <= 0; // initialize R2 with the value 0x67
-        end
-        T0: begin // see if you need to de-assert these signals
-            PCout <= 1; MARin <= 1; IncPC <= 1; Zin <= 1;
-        end
-        T1: begin
-            Zlowout <= 1; PCin <= 1; Read <= 1; MDRin <= 1;
-            Mdatain <= 32'h112B0000; // opcode for “and R2, R5, R6”
-        end
-        T2: begin
-            MDRout <= 1; IRin <= 1; 
-        end
-        T3: begin
-            R5out <= 1; Yin <= 1;
-        end
-        T4: begin
-            R6out <= 1; AND <= 1; Zin <= 1;
-        end
-        T5: begin
-            Zlowout <= 1; R2in <= 1;
-        end
-    endcase
-end
+    $display("PASS PHASE1 AND: R2=%h PC=%h IR=%h", R2_q, PC_q_dbg, IR_q_dbg);
+    $finish;
+  end
 
 endmodule

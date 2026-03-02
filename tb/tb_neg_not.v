@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 `include "defines.vh"
 
-module datapath_add_tb;
+module tb_neg_not;
   reg clk = 1'b0;
   always #5 clk = ~clk;
 
@@ -19,8 +19,7 @@ module datapath_add_tb;
   wire [31:0] HI_q_dbg, LO_q_dbg, IR_q_dbg, PC_q_dbg, Y_q;
   wire [63:0] Z_q;
 
-  localparam [4:0] SEL_R5   = 5'd5;
-  localparam [4:0] SEL_R6   = 5'd6;
+  localparam [4:0] SEL_R7   = 5'd7;
   localparam [4:0] SEL_PC   = 5'd16;
   localparam [4:0] SEL_MDR  = 5'd20;
   localparam [4:0] SEL_ZLOW = 5'd23;
@@ -86,7 +85,6 @@ module datapath_add_tb;
   task fetch_instr;
     input [31:0] opcode;
     begin
-      // T0: PCout, MARin, IncPC, Zin
       clear_ctrl();
       bus_sel = SEL_PC;
       MARin = 1'b1;
@@ -94,7 +92,6 @@ module datapath_add_tb;
       Zin = 1'b1;
       tick;
 
-      // T1: Zlowout, PCin, Read, Mdatain, MDRin
       clear_ctrl();
       bus_sel = SEL_ZLOW;
       PCin = 1'b1;
@@ -103,22 +100,16 @@ module datapath_add_tb;
       Mdatain = opcode;
       tick;
 
-      // T2: MDRout, IRin
       clear_ctrl();
       bus_sel = SEL_MDR;
       IRin = 1'b1;
       tick;
-
-      if (IR_q_dbg !== opcode) begin
-        $display("FAIL ADD FETCH: IR=%h expected=%h", IR_q_dbg, opcode);
-        $fatal;
-      end
     end
   endtask
 
   initial begin
-    $dumpfile("add.vcd");
-    $dumpvars(0, datapath_add_tb);
+    $dumpfile("neg_not.vcd");
+    $dumpvars(0, tb_neg_not);
 
     PC = 32'd0;
     IR = 32'd0;
@@ -132,41 +123,60 @@ module datapath_add_tb;
     tick;
     reset = 1'b0;
 
-    load_reg(5, 32'd7);
-    load_reg(6, 32'd11);
+    load_reg(7, 32'h0000_00A5);
 
-    fetch_instr(32'h012B0000); // add R2, R5, R6
+    // NEG R4, R7
+    fetch_instr(32'h7238_0000);
+    if (IR_q_dbg !== 32'h7238_0000) begin
+      $display("FAIL NEG FETCH: IR=%h expected=%h", IR_q_dbg, 32'h7238_0000);
+      $fatal;
+    end
 
-    // T3: R5out, Yin
+    // T3: R7out, NEG, Zin
     clear_ctrl();
-    bus_sel = SEL_R5;
-    Yin = 1'b1;
-    tick;
-
-    // T4: R6out, ADD, Zin
-    clear_ctrl();
-    bus_sel = SEL_R6;
-    op = `ADDop;
+    bus_sel = SEL_R7;
+    op = `NEGop;
     Zin = 1'b1;
     tick;
 
-    // T5: Zlowout, R2in
+    // T4: Zlowout, R4in
     clear_ctrl();
     bus_sel = SEL_ZLOW;
-    Rin[2] = 1'b1;
+    Rin[4] = 1'b1;
     tick;
 
-    if (R2_q !== 32'd18) begin
-      $display("FAIL ADD: R2=%0d expected=18", R2_q);
+    if (R4_q !== (~32'h0000_00A5 + 1'b1)) begin
+      $display("FAIL NEG: R4=%h expected=%h", R4_q, (~32'h0000_00A5 + 1'b1));
+      $fatal;
+    end
+    $display("PASS NEG: R4=%h", R4_q);
+
+    // NOT R4, R7
+    fetch_instr(32'h7A38_0000);
+    if (IR_q_dbg !== 32'h7A38_0000) begin
+      $display("FAIL NOT FETCH: IR=%h expected=%h", IR_q_dbg, 32'h7A38_0000);
       $fatal;
     end
 
-    if (PC_q_dbg !== 32'h0000_0001) begin
-      $display("FAIL ADD: PC=%h expected=%h", PC_q_dbg, 32'h0000_0001);
+    // T3: R7out, NOT, Zin
+    clear_ctrl();
+    bus_sel = SEL_R7;
+    op = `NOTop;
+    Zin = 1'b1;
+    tick;
+
+    // T4: Zlowout, R4in
+    clear_ctrl();
+    bus_sel = SEL_ZLOW;
+    Rin[4] = 1'b1;
+    tick;
+
+    if (R4_q !== (~32'h0000_00A5)) begin
+      $display("FAIL NOT: R4=%h expected=%h", R4_q, (~32'h0000_00A5));
       $fatal;
     end
+    $display("PASS NOT: R4=%h", R4_q);
 
-    $display("PASS ADD: R2=%0d PC=%h IR=%h", R2_q, PC_q_dbg, IR_q_dbg);
     $finish;
   end
 

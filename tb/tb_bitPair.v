@@ -13,7 +13,8 @@ module tb_bitPair;
 
   integer i;
   integer tests;
-  integer startTime, currentTime, goalTime, minutes;
+  time startTime, currentTime, goalTime;
+  integer minutes;
 
   task check;
     begin
@@ -29,7 +30,7 @@ module tb_bitPair;
 
   initial begin
     tests = -18; //Start at -18 to offset corner cases
-    goalTime = 300 * 1_000_000_000_000; // 300s = 3e14 ps
+    goalTime = 64'd300000000000000; // 300s = 3e14 ps
     $display("Starting Booth's Bit Pair Test...");
 
     //Can no longer check every combination as it would take far too long

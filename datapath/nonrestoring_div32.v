@@ -16,6 +16,16 @@ module nonrestoring_div32(
     reg [31:0] num_mag, den_mag;
 
     always @(*) begin
+        // Defaults prevent inferred latches in combinational implementation.
+        quotient  = 32'b0;
+        remainder = 32'b0;
+        a         = 33'sd0;
+        q         = 32'b0;
+        m         = 33'sd0;
+        num_mag   = 32'b0;
+        den_mag   = 32'b0;
+        i         = 0;
+
         num_neg = ($signed(numerator)   < 0);
         den_neg = ($signed(denominator) < 0);
 
@@ -42,18 +52,21 @@ module nonrestoring_div32(
                 q[0] = (a >= 0);
             end
 
-            if (a < 0)
+            if (a < 0) begin
                 a = a + m;
+            end
 
-            if (num_neg ^ den_neg)
+            if (num_neg ^ den_neg) begin
                 quotient = ~q + 1'b1;
-            else
+            end else begin
                 quotient = q;
+            end
 
-            if (num_neg)
+            if (num_neg) begin
                 remainder = ~a[31:0] + 1'b1;
-            else
+            end else begin
                 remainder = a[31:0];
+            end
         end
     end
 
