@@ -24,6 +24,9 @@ module datapath_add_tb;
   localparam [4:0] SEL_PC   = 5'd16;
   localparam [4:0] SEL_MDR  = 5'd20;
   localparam [4:0] SEL_ZLOW = 5'd23;
+  reg [31:0] add_a;
+  reg [31:0] add_b;
+  reg [31:0] expected_add;
 
   datapath_logic dut (
     .clk(clk), .reset(reset),
@@ -132,8 +135,14 @@ module datapath_add_tb;
     tick;
     reset = 1'b0;
 
-    load_reg(5, 32'd7);
-    load_reg(6, 32'd11);
+    // Keep expectations aligned with the register preload values used in the demo.
+    add_a = 32'h0000_0034;
+    add_b = 32'h0000_0045;
+    expected_add = add_a + add_b;
+
+    load_reg(5, add_a);
+    load_reg(6, add_b);
+    load_reg(2, 32'h0000_0067);
 
     fetch_instr(32'h012B0000); // add R2, R5, R6
 
@@ -156,8 +165,8 @@ module datapath_add_tb;
     Rin[2] = 1'b1;
     tick;
 
-    if (R2_q !== 32'd18) begin
-      $display("FAIL ADD: R2=%0d expected=18", R2_q);
+    if (R2_q !== expected_add) begin
+      $display("FAIL ADD: R2=%h expected=%h (A=%h B=%h)", R2_q, expected_add, add_a, add_b);
       $fatal;
     end
 
@@ -166,7 +175,7 @@ module datapath_add_tb;
       $fatal;
     end
 
-    $display("PASS ADD: R2=%0d PC=%h IR=%h", R2_q, PC_q_dbg, IR_q_dbg);
+    $display("PASS ADD: R2=%h expected=%h PC=%h IR=%h", R2_q, expected_add, PC_q_dbg, IR_q_dbg);
     $finish;
   end
 

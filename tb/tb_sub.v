@@ -24,6 +24,11 @@ module tb_sub;
   localparam [4:0] SEL_PC   = 5'd16;
   localparam [4:0] SEL_MDR  = 5'd20;
   localparam [4:0] SEL_ZLOW = 5'd23;
+  reg [31:0] sub_a;
+  reg [31:0] sub_b;
+  reg [31:0] expected_sub;
+  reg        expected_overflow;
+  reg        sub_overflow_seen;
 
   datapath_logic dut (
     .clk(clk), .reset(reset),
@@ -124,8 +129,13 @@ module tb_sub;
     tick;
     reset = 1'b0;
 
-    load_reg(5, 32'h0000_0034);
-    load_reg(6, 32'h0000_0045);
+    sub_a = 32'h0000_0034;
+    sub_b = 32'h0000_0045;
+    expected_sub = sub_a - sub_b;
+    expected_overflow = 1'b0;
+    load_reg(5, sub_a);
+    load_reg(6, sub_b);
+    load_reg(2, 32'h0000_0067);
 
     fetch_instr(32'h092B0000); // sub R2, R5, R6
     if (IR_q_dbg !== 32'h092B0000) begin
@@ -145,6 +155,12 @@ module tb_sub;
     op = `SUBop;
     Zin = 1'b1;
     tick;
+    sub_overflow_seen = dut.ULOGIC.overflow;
+
+    if (sub_overflow_seen !== expected_overflow) begin
+      $display("FAIL SUB OVERFLOW: overflow=%b expected=%b (A=%h B=%h)", sub_overflow_seen, expected_overflow, sub_a, sub_b);
+      $fatal;
+    end
 
     // T5: Zlowout, R2in
     clear_ctrl();
@@ -152,12 +168,12 @@ module tb_sub;
     Rin[2] = 1'b1;
     tick;
 
-    if (R2_q !== (32'h0000_0034 - 32'h0000_0045)) begin
-      $display("FAIL SUB: R2=%h expected=%h", R2_q, (32'h0000_0034 - 32'h0000_0045));
+    if (R2_q !== expected_sub) begin
+      $display("FAIL SUB: R2=%h expected=%h (A=%h B=%h)", R2_q, expected_sub, sub_a, sub_b);
       $fatal;
     end
 
-    $display("PASS SUB: R2=%h", R2_q);
+    $display("PASS SUB: R2=%h expected=%h overflow=%b", R2_q, expected_sub, sub_overflow_seen);
     $finish;
   end
 

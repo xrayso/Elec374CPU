@@ -29,8 +29,10 @@ module tb_logic;
   localparam [4:0] SEL_ZLOW = 5'd23;
 
   localparam [31:0] A_VAL = 32'hF0F0_0F0F;
-  localparam [31:0] B_VAL = 32'hAAAA_5555;
-  localparam [4:0]  SHAMT = 5'd7;
+  localparam [31:0] R5_INIT = 32'h0000_0034;
+  localparam [31:0] R6_INIT = 32'h0000_0045;
+  localparam [31:0] R2_INIT = 32'h0000_0067;
+  localparam [4:0]  SHAMT = 5'd8;
 
   datapath_logic dut (
     .clk(clk), .reset(reset),
@@ -166,16 +168,18 @@ module tb_logic;
     tick;
     reset = 1'b0;
 
-    load_reg(5, A_VAL);         // R5
-    load_reg(6, B_VAL);         // R6
+
     load_reg(0, A_VAL);         // R0
+    load_reg(5, R5_INIT);
+    load_reg(6, R6_INIT);
+    load_reg(2, R2_INIT);
     load_reg(4, {27'd0, SHAMT}); // R4
 
     // OR R2, R5, R6
     fetch_instr(32'h192B0000);
     exec_bin_to_reg(SEL_R5, SEL_R6, `ORop, 2);
-    if (R2_q !== (A_VAL | B_VAL)) begin
-      $display("FAIL OR: R2=%h expected=%h", R2_q, (A_VAL | B_VAL));
+    if (R2_q !== (R5_INIT | R6_INIT)) begin
+      $display("FAIL OR: R2=%h expected=%h", R2_q, (R5_INIT | R6_INIT));
       $fatal;
     end
     $display("PASS OR: R2=%h", R2_q);
@@ -192,8 +196,8 @@ module tb_logic;
     // SHRA R7, R0, R4
     fetch_instr(32'h2B820000);
     exec_bin_to_reg(SEL_R0, SEL_R4, `SHRAop, 7);
-    if (R7_q !== 32'hFFE1_E01E) begin
-      $display("FAIL SHRA: R7=%h expected=%h", R7_q, 32'hFFE1_E01E);
+    if (R7_q !== 32'hFFF0_F00F) begin
+      $display("FAIL SHRA: R7=%h expected=%h", R7_q, 32'hFFF0_F00F);
       $fatal;
     end
     $display("PASS SHRA: R7=%h", R7_q);
